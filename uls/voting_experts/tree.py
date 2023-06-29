@@ -1,5 +1,6 @@
-from tqdm import tqdm
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor, wait
+
 
 class Stats:
     def __init__(self):
@@ -109,7 +110,7 @@ def standardized_entropy(node, stats):
 
     return (node.entropy - stats[node.level].entropy_mean)/stats[node.level].entropy_std
 
-def standardize(root, stats):
+def standardize(root, stats, threads=55):
     if root is None:
         return
     
@@ -117,13 +118,28 @@ def standardize(root, stats):
     for node in root.nodes.values():
         queue.append(node)
  
-    while(len(queue) > 0):
+
+    # Dividing tree into {threads} parts to process all of them independently
+    index = 0
+    divided_queues = []
+    quotient, remainder = len(queue) // threads, len(queue) % threads
+    for _ in range(threads):
+        sublist_size = quotient + 1 if remainder > 0 else quotient
+        divided_queues.append(queue[index:index + sublist_size])
+        index += sublist_size
+        remainder -= 1
+
+    # Standardize in parallel
+    with ThreadPoolExecutor(max_workers=threads) as pool:
+        futures = [pool.submit(inner_standardize, q, stats) for q in divided_queues]
+        wait(futures)
+
+def inner_standardize(queue, stats):
+    while queue:
         queue[0].frequency = standardized_frequency(queue[0], stats)
         queue[0].entropy = standardized_entropy(queue[0], stats)
         node = queue.pop(0)
-
-        for child in node.nodes.values():
-            queue.append(child)
+        queue.extend(node.nodes.values())
 
 def find_node(seq, ngram_tree):
     last = ngram_tree

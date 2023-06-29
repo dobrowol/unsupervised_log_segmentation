@@ -1,8 +1,7 @@
-from tools.sequence_segmentation.tree import Tree, tree_from_ngram
+from uls.voting_experts.tree import Tree, tree_from_ngram
 from pathlib import Path
 import logging
 import time
-import pickle
 import subprocess
 
 logger = logging.getLogger(__name__)

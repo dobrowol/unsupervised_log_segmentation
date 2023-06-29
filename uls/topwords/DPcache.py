@@ -4,7 +4,7 @@ Created on Sat Dec 23 23:18:22 2017
 
 @author: zcw2218
 """
-from tools.experimental_methods.topwords.LimitStack import *
+from uls.topwords.LimitStack import *
 class DPcache():
     def __init__(self,dictionary):
         self.dict = {}

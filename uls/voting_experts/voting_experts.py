@@ -1,19 +1,15 @@
-import multiprocessing as mp
 import pickle
 import subprocess
-import configparser
 import numpy as np
 import time
 import math
 import os
-import io
 import logging
 from tqdm import tqdm
 from pathlib import Path
 from uls.voting_experts.tree import find_node, calculate_experts_features
 from uls.voting_experts.tree import tree_from_ngram, Tree, get_stats, standardize
 from uls.voting_experts.tree import build_tree, update_tree
-from concurrent.futures import ThreadPoolExecutor, wait
 from uls.voting_experts.ngram import Ngram
 
 logger = logging.getLogger(__name__)
@@ -98,6 +94,7 @@ class VotingExperts(Ngram):
         trees = list(Path(a_dir).glob(f"*_{self.tree_depth}gram.tree"))
         if len(trees) == 0:
             return None
+        print("found a tree ", trees[0])
         tree_file = trees[0]
         logger.debug(f"using old tree {tree_file}")
         with open(tree_file, "rb") as inp:
@@ -162,24 +159,17 @@ class VotingExperts(Ngram):
             standards = {}
             calculate_experts_features(self.ngram_tree, standard=standards)
             stats = get_stats(standards)
-            standardize(self.ngram_tree, stats)
+            logger.info("standardizing experts features")
+            standardize(self.ngram_tree, stats, threads=self.threads)
             self.standardized = True
 
     def transform(self, file_list):
         self.standardize_tree()
-        manager = mp.Manager()
-        out_filenames = manager.list()
-        # with ThreadPoolExecutor(max_workers=self.threads) as pool:
-                    
-        #     futures = [pool.submit(self.transform_file, file_name, out_filenames)
-        #                 for file_name in tqdm(file_list)]
-        #     print('Waiting for tasks to complete...')
-        #     wait(futures)
+        out_filenames = []
 
         for file_name in (file_list):
             self.transform_file(file_name, out_filenames)
 
-            
         return out_filenames
 
     def transform_file(self, file_name, out_filenames):
@@ -191,16 +181,9 @@ class VotingExperts(Ngram):
         start_time = time.time()
         self.split_file_name = self.create_split_file(file_name)
         with open( self.split_file_name) as data_file:
-            manager = mp.Manager()
-            transformed_lines = manager.dict()
+            transformed_lines = {}
             [self.transform_line(idx, line, transformed_lines)
                             for idx,line in enumerate(data_file)]
-            # with ThreadPoolExecutor(max_workers=self.threads) as pool:
-
-            #     futures = [pool.submit(self.transform_line, idx, line, transformed_lines)
-            #                 for idx,line in tqdm(enumerate(data_file))]
-            #     print('Waiting for tasks to complete...')
-            #     wait(futures)
             self.save_results(out_filename, transformed_lines)
 
         logger.info("-----transform with %d threads took %s seconds -----" % (self.threads, time.time() - start_time))
@@ -215,35 +198,6 @@ class VotingExperts(Ngram):
         split_pattern = self.vote(sentence)
         fragmented_sentence = self.split(sentence, split_pattern)
         transformed_lines[idx] = fragmented_sentence
-
-    def vote_parallel(self, sentence):
-        num_of_sliding_windows_in_a_sentence = get_num_of_sliding_windows_in_a_sentence(sentence,self.window_size)
-        if num_of_sliding_windows_in_a_sentence<self.threads:
-            threads_count = num_of_sliding_windows_in_a_sentence
-        else:
-            threads_count = self.threads 
-
-        manager = mp.Manager()
-        return_dict = manager.dict()
-        split_pattern = np.zeros((len(sentence)),dtype='float64')
-        self.vote_thread(0, sentence, return_dict)
-        #subsets = _split(sentence, self.threads, self.tree_depth)
-        #with ThreadPoolExecutor(max_workers=self.threads) as pool:
-        #            for sub in tqdm(subsets):
-        #                pool.submit(self.vote_thread, sub[0], sub[1], return_dict)
-        #jobs = []
-        
-        # for sub in subsets:
-        #     p = multiprocessing.Process(target=self.thread, args=(sub[0], sub[1], return_dict))
-        #     jobs.append(p)
-        #     p.start()
-        # for proc in jobs:
-        #     proc.join()
-
-        for key,value in return_dict.items():
-            end = value.shape[0]
-            split_pattern[key:key+end] += value
-        return split_pattern
 
     def vote(self, sequence):
         """
@@ -278,8 +232,6 @@ class VotingExperts(Ngram):
         return slice_array
 
     def split(self, sequence, slicing_pattern):
-        #TODO zmienić, żeby zwracał indeksy powyżej threshold, 
-        #i na podstawie draina odbudowywał sekwencje podziału
         sen = []
         split_sequence = []
         for i in range(len(slicing_pattern)):
