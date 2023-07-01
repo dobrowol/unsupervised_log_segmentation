@@ -94,7 +94,6 @@ class VotingExperts(Ngram):
         trees = list(Path(a_dir).glob(f"*_{self.tree_depth}gram.tree"))
         if len(trees) == 0:
             return None
-        print("found a tree ", trees[0])
         tree_file = trees[0]
         logger.debug(f"using old tree {tree_file}")
         with open(tree_file, "rb") as inp:
@@ -102,24 +101,23 @@ class VotingExperts(Ngram):
             logger.info("loading old ngram tree took ----- %s seconds -----" % (time.time() - start_time))
         return tree_file
 
-    def fit(self, file_list):
+    def fit(self, file_name):
         if self.max_line_size < self.tree_depth:
             logger.error("tree depth cannot be greater than a line")
             return False
         start_time = time.time()
         self.retrieve_tree(f"{self.out_directory}")
-        for file_name in (file_list):
-            if self.out_directory is None:
-                self.out_directory = Path(file_name).parent
-            Path(f"{self.out_directory}").mkdir(parents=True, exist_ok=True)
+        if self.out_directory is None:
+            self.out_directory = Path(file_name).parent
+        Path(f"{self.out_directory}").mkdir(parents=True, exist_ok=True)
 
-            if self.window_size < 1 or self.tree_depth < 2:
-                return False
-            srilm_path = os.getenv('SRILM_PATH')
-            if Path(f"{srilm_path}/ngram-count").is_file():
-                self.build_ngram_tree_with_srilm(file_name)
-            else:
-                self.build_ngram_tree(file_name)
+        if self.window_size < 1 or self.tree_depth < 2:
+            return False
+        srilm_path = os.getenv('SRILM_PATH')
+        if Path(f"{srilm_path}/ngram-count").is_file():
+            self.build_ngram_tree_with_srilm(file_name)
+        else:
+            self.build_ngram_tree(file_name)
         
         out_file = Path(self.out_directory)/f"{self.tree_name}_{self.tree_depth}gram.tree"
         with open(out_file, "wb") as out:
@@ -163,41 +161,37 @@ class VotingExperts(Ngram):
             standardize(self.ngram_tree, stats, threads=self.threads)
             self.standardized = True
 
-    def transform(self, file_list):
+    def transform(self, file_name):
         self.standardize_tree()
-        out_filenames = []
 
-        for file_name in (file_list):
-            self.transform_file(file_name, out_filenames)
+        return self.transform_file(file_name)
 
-        return out_filenames
-
-    def transform_file(self, file_name, out_filenames):
+    def transform_file(self, file_name):
         out_filename = Path(self.out_directory)/f"{Path(file_name).stem}_{self.window_size}_{self.threshold}_segmented.out"
         if Path(out_filename).is_file():
-            out_filenames.append(out_filename)
-            return
+            with open(out_filename, "rb") as saved_file:
+                split_indexes = pickle.load(saved_file)
+            return split_indexes
 
         start_time = time.time()
         self.split_file_name = self.create_split_file(file_name)
         with open( self.split_file_name) as data_file:
-            transformed_lines = {}
-            [self.transform_line(idx, line, transformed_lines)
-                            for idx,line in enumerate(data_file)]
-            self.save_results(out_filename, transformed_lines)
+            line = data_file.read().rstrip('\n')
+            segment_indexes = self.transform_line(line)
+        with open(out_filename, "wb") as save_file:
+            pickle.dump(segment_indexes, save_file)
 
         logger.info("-----transform with %d threads took %s seconds -----" % (self.threads, time.time() - start_time))
         print("-----transform with %d threads took %s seconds -----" % (self.threads, time.time() - start_time))
         logger.debug(f"fragmented file saved to {out_filename}")
-        out_filenames.append(out_filename)
+        return segment_indexes
 
-    def transform_line(self, idx, line, transformed_lines):
-        sentence =  line.strip().split() 
+    def transform_line(self, line):
+        sentence =  line.strip().split(' ') 
         if sentence == []:
             return          
         split_pattern = self.vote(sentence)
-        fragmented_sentence = self.split(sentence, split_pattern)
-        transformed_lines[idx] = fragmented_sentence
+        return self.split(split_pattern)
 
     def vote(self, sequence):
         """
@@ -231,17 +225,12 @@ class VotingExperts(Ngram):
             slice_array[frequency_slice_spot] += 1
         return slice_array
 
-    def split(self, sequence, slicing_pattern):
-        sen = []
-        split_sequence = []
+    def split(self, slicing_pattern):
+        indexes = []
         for i in range(len(slicing_pattern)):
-            sen.append(sequence[i])
             if slicing_pattern[i] > self.threshold:
-                split_sequence.append(sen)
-                sen = []
-        if not sen == []:
-            split_sequence.append(sen)
-        return split_sequence
+                indexes.append(i+1)
+        return indexes
 
     def vote_thread(self, sub_id, sub, return_dict):
         pattern = self.vote(sub)
@@ -271,7 +260,7 @@ class VotingExperts(Ngram):
             for key in sorted(transformed_lines.keys()):
                 pickle.dump(transformed_lines[key], out_file)
 
-    def fit_transform(self, dataset_file):
+    def fit_transform(self, file):
         """
         dataset_file: string. File contains list of *.drain files that are going to be scanned
 
@@ -280,13 +269,10 @@ class VotingExperts(Ngram):
         logger.debug(f"fit transform Entropy window {self.window_size} threshold {self.threshold}")
         if self.window_size < 1 or self.tree_depth < 2 or self.window_size >= self.tree_depth:
             return []
-        self.tree_name = Path(dataset_file).stem
-        with open(dataset_file, "r") as dataset:
-            files_list = dataset.read().splitlines()
  
-        self.fit(files_list)
+        self.fit(file)
 
-        return self.transform(files_list)
+        return self.transform(file)
 
 if __name__ == '__main__':
     import sys
