@@ -14,7 +14,7 @@ from tqdm import tqdm
 pd.set_option('display.precision', 18)
 
 class TopWORDS:
-    def __init__(self, out_dir, word_length, word_frequency, prob_threshold = 1.0*10**(-4), word_boundary= 0):
+    def __init__(self, out_dir, word_length, word_frequency, prob_threshold = 1.0*10**(-6), word_boundary= 0):
         self.out_dir = out_dir
         self.word_length = word_length
         self.word_frequency = word_frequency
