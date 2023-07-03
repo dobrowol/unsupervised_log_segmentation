@@ -41,7 +41,6 @@ def bayes_for_voting_experts(args):
             target = voting_experts_text_f1_score(args.log, args.std, window, threshold, args.out_dir)
         try:
             result = 'Partial Result: {}; f(x)={}.'.format(next_point, target)
-            print(result)
             logger.info(result) 
             out_file.write(result+"\n")
             optimizer.register(params=next_point, target=target)
@@ -84,7 +83,6 @@ def bayes_for_fixed_window(args):
             
         try:
             result = 'Partial Result: {};alignment: {}, f(x)={}.'.format(next_point, best_alignment, target)
-            print(result)
             logger.info(result) 
             out_file.write(result+"\n")
             optimizer.register(params=next_point, target=max_target)
@@ -127,7 +125,6 @@ def bayes_for_top_words(args):
                                         0, args.out_dir)
         try:
             result = 'Partial Result: {}; f(x)={}.'.format(next_point, target)
-            print(result)
             logger.info(result) 
             out_file.write(result+"\n")
             optimizer.register(params=next_point, target=target)
@@ -164,13 +161,17 @@ if __name__ == '__main__':
     Path(f'{str(out_dir)}').mkdir(exist_ok=True, parents=True)
     out_file = open(res_file_name, 'wt') 
 
+    import time
+
+    start_time = time.time()
     if args.voting_experts:
         result = bayes_for_voting_experts(args)
     elif args.fixed_window:
         result = bayes_for_fixed_window(args)
     elif args.top_words:
         result = bayes_for_top_words(args)
-
+    logger.info(f"Hyperparameter tuning took {time.time() - start_time} seconds")
+    print(f"Hyperparameter tuning took {time.time() - start_time} seconds")
     logger.info(result)
     print(result)
     

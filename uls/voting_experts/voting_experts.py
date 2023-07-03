@@ -124,7 +124,7 @@ class VotingExperts(Ngram):
             pickle.dump(self.ngram_tree, out)
         logger.debug(f"ngram tree saved to {out_file}")
         logger.info("-----fit took %s seconds -----" % (time.time() - start_time))
-        print("-----fit took %s seconds -----" % (time.time() - start_time))
+        #print("-----fit took %s seconds -----" % (time.time() - start_time))
         self.standardized = False
         return True
 
@@ -182,7 +182,7 @@ class VotingExperts(Ngram):
             pickle.dump(segment_indexes, save_file)
 
         logger.info("-----transform with %d threads took %s seconds -----" % (self.threads, time.time() - start_time))
-        print("-----transform with %d threads took %s seconds -----" % (self.threads, time.time() - start_time))
+        #print("-----transform with %d threads took %s seconds -----" % (self.threads, time.time() - start_time))
         logger.debug(f"fragmented file saved to {out_filename}")
         return segment_indexes
 
