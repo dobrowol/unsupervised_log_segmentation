@@ -13,18 +13,25 @@ def is_in(item, list_of_tuples):
             return True
     return False
 
-def f1_score(received_splits, golden_splits):
-    correct_received_splits = sum([1 for split in received_splits if split in golden_splits])
+def f1_score(received_splits, golden_splits, text_len):
+    true_positives = sum([1 for split in received_splits if split in golden_splits])
+    false_positives = sum([1 for split in received_splits if split not in golden_splits])
+    false_negatives = sum([1 for split in golden_splits if split not in received_splits])
+    true_negatives = text_len - len(golden_splits)
 
+    print("true_positives ", true_positives)
+    print("false_positives ", false_positives)
+    print("false_negatives ", false_negatives)
+    print("true_negatives ", true_negatives)
     if len(received_splits) == 0:
         precision = 0
     else:
-        precision = correct_received_splits/len(received_splits)
+        precision = true_positives/len(received_splits)
     
-    recall = correct_received_splits/len(golden_splits)
+    recall = true_positives/len(golden_splits)
 
-    # print("precision ", precision)
-    # print("recall ", recall)
+    print("precision ", precision)
+    print("recall ", recall)
     if precision + recall == 0:
         return 0
     if precision + recall == 0:
@@ -142,14 +149,14 @@ if __name__ == "__main__":
     from argparse import ArgumentParser
 
     parser = ArgumentParser()
-    parser.add_argument("-log", type=str)
-    parser.add_argument("-std", type=str)
+    parser.add_argument("-unsegmented", type=str)
+    parser.add_argument("-golden", type=str)
     parser.add_argument("-window", type=int)
     parser.add_argument("-threshold", type=int)
     parser.add_argument("-out_dir", type=str)
     args = parser.parse_args()
-    f1_score = voting_experts_f1_score(args.log, 
-                                             args.std, 
+    f1_score = voting_experts_text_f1_score(args.unsegmented, 
+                                             args.golden, 
                                              args.window, args.threshold, 
                                              args.out_dir)
     print(f"F1-score for window {args.window}, threshold {args.threshold} is {f1_score}")

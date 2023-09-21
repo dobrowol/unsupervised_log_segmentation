@@ -287,7 +287,7 @@ if __name__ == '__main__':
     from argparse import ArgumentParser
 
     parser = ArgumentParser()
-    parser.add_argument("dataset", type=str)
+    parser.add_argument("file", type=str)
     parser.add_argument("window", type=int)
     parser.add_argument("threshold", type=int)
     parser.add_argument("out_dir", type=str)
@@ -295,6 +295,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     ve = VotingExperts(args.window, args.threshold, out_directory=args.out_dir)
-    with open(args.dataset, "r") as dataset:
-            files_list = dataset.read().splitlines()
-    ve.fit(files_list)
+
+    ve.fit_transform(args.file)
