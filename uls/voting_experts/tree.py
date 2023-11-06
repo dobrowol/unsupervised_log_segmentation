@@ -1,4 +1,6 @@
+from tqdm import tqdm
 import numpy as np
+import multiprocessing as mp
 from concurrent.futures import ThreadPoolExecutor, wait
 
 
@@ -53,12 +55,13 @@ def calculate_entropy(root, data, depth):
             log_entropy += np.log(last.entropy)
     return log_entropy/len(data)
 
-def update_tree(root, data, depth):
-    for i in range(len(data)):
-        last = root.add_node(data[i])
-        for j in range(depth - 2):
-            if i + j + 1 < len(data):
-                last = last.add_node(data[i + j + 1])
+def update_tree(root, sentences, depth):
+    for data in tqdm(sentences, desc="adding sentences to tree"):
+        for i in range(len(data)):
+            last = root.add_node(data[i])
+            for j in range(depth - 2):
+                if i + j + 1 < len(data):
+                    last = last.add_node(data[i + j + 1])
 
 def add_standard_values(standard, level, type, values):
     if level in standard:

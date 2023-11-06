@@ -1,3 +1,4 @@
+import multiprocessing as mp
 import pickle
 import subprocess
 import numpy as np
@@ -10,6 +11,7 @@ from pathlib import Path
 from uls.voting_experts.tree import find_node, calculate_experts_features
 from uls.voting_experts.tree import tree_from_ngram, Tree, get_stats, standardize
 from uls.voting_experts.tree import build_tree, update_tree
+from concurrent.futures import ThreadPoolExecutor, wait
 from uls.voting_experts.ngram import Ngram
 
 logger = logging.getLogger(__name__)
@@ -101,16 +103,44 @@ class VotingExperts(Ngram):
             logger.info("loading old ngram tree took ----- %s seconds -----" % (time.time() - start_time))
         return tree_file
 
+    # def fit(self, data):
+    #     if self.max_line_size < self.tree_depth:
+    #         logger.error("tree depth cannot be greater than a line")
+    #         return False
+    #     start_time = time.time()
+        
+    #     retrieved_tree = self.retrieve_tree(self.out_directory) 
+    #     print("retrieved tree ", retrieved_tree)
+    #     if retrieved_tree is not None:
+    #         return True
+    #     if self.window_size < 1 or self.tree_depth < 2:
+    #             return False
+    #     srilm_path = os.getenv('SRILM_PATH')
+    #     if Path(f"{srilm_path}/ngram-count").is_file():
+    #         self.build_ngram_tree_with_srilm(data)
+    #     else:
+    #         self.build_ngram_tree(data)
+    #     self.standardize_tree()
+    #     out_file = Path(self.out_directory)/f"{self.tree_name}_{self.tree_depth}gram.tree"
+    #     with open(out_file, "wb") as out:
+    #         pickle.dump(self.ngram_tree, out)
+    #     logger.debug(f"ngram tree saved to {out_file}")
+    #     logger.info("-----fit took %s seconds -----" % (time.time() - start_time))
+    #     print("-----fit took %s seconds -----" % (time.time() - start_time))
+        
+    #     return True
+    
     def fit(self, file_name):
         if self.max_line_size < self.tree_depth:
             logger.error("tree depth cannot be greater than a line")
             return False
         start_time = time.time()
-        self.retrieve_tree(f"{self.out_directory}")
         if self.out_directory is None:
-            self.out_directory = Path(file_name).parent
-        Path(f"{self.out_directory}").mkdir(parents=True, exist_ok=True)
-
+            self.out_directory = Path(file_list[0]).parent
+            Path(f"{self.out_directory}").mkdir(parents=True, exist_ok=True)
+        retrieved_tree = self.retrieve_tree(self.out_directory) 
+        if retrieved_tree is not None:
+            return True
         if self.window_size < 1 or self.tree_depth < 2:
             return False
         srilm_path = os.getenv('SRILM_PATH')
@@ -119,13 +149,14 @@ class VotingExperts(Ngram):
         else:
             self.build_ngram_tree(file_name)
         
+        self.standardize_tree()
         out_file = Path(self.out_directory)/f"{self.tree_name}_{self.tree_depth}gram.tree"
         with open(out_file, "wb") as out:
             pickle.dump(self.ngram_tree, out)
         logger.debug(f"ngram tree saved to {out_file}")
         logger.info("-----fit took %s seconds -----" % (time.time() - start_time))
-        #print("-----fit took %s seconds -----" % (time.time() - start_time))
-        self.standardized = False
+        print("-----fit took %s seconds -----" % (time.time() - start_time))
+        
         return True
 
     def build_ngram_tree_with_srilm(self, file_name):
@@ -139,59 +170,112 @@ class VotingExperts(Ngram):
     def build_ngram_tree(self, file_name):
         with open(file_name, "r") as data_file:
             lines = 0
+            sentences = []
             for line in data_file:
                 lines +=1
                 sentence = []
                 for word in line.strip().split():
                     sentence.append(word)
+                sentences.append(sentence)
             if lines == 0:
                 logger.error("Draining empty. See above errors.")
                 return
             if not self.ngram_tree:
-                self.ngram_tree = build_tree(sentence, self.tree_depth)
+                self.ngram_tree = build_tree(sentences, self.tree_depth)
             else:
-                update_tree(self.ngram_tree, sentence, self.tree_depth)
+                update_tree(self.ngram_tree, sentences, self.tree_depth)
 
     def standardize_tree(self):
-        if not self.standardized:
-            standards = {}
-            calculate_experts_features(self.ngram_tree, standard=standards)
-            stats = get_stats(standards)
-            logger.info("standardizing experts features")
-            standardize(self.ngram_tree, stats, threads=self.threads)
-            self.standardized = True
+       
+        standards = {}
+        calculate_experts_features(self.ngram_tree, standard=standards)
+        stats = get_stats(standards)
+        logger.info("standardizing experts features")
+        standardize(self.ngram_tree, stats, threads=self.threads)
+        
 
     def transform(self, file_name):
-        self.standardize_tree()
+        
+        # with ThreadPoolExecutor(max_workers=self.threads) as pool:
+                    
+        #     futures = [pool.submit(self.transform_file, file_name, out_filenames)
+        #                 for file_name in tqdm(file_list)]
+        #     print('Waiting for tasks to complete...')
+        #     wait(futures)
 
         return self.transform_file(file_name)
 
+            
+
     def transform_file(self, file_name):
-        out_filename = Path(self.out_directory)/f"{Path(file_name).stem}_{self.window_size}_{self.threshold}_segmented.out"
-        if Path(out_filename).is_file():
-            with open(out_filename, "rb") as saved_file:
-                split_indexes = pickle.load(saved_file)
-            return split_indexes
+        out_filename = Path(self.out_directory)/f"{Path(file_name).stem}_{self.window_size}_{self.threshold}_segmented.txt"
+        # if Path(out_filename).is_file():
+        #     with open(out_filename, "r") as segm_file:
+        #         segments = pickle.load(segm_file)
+        #     return segments
 
         start_time = time.time()
-        self.split_file_name = self.create_split_file(file_name)
-        with open( self.split_file_name) as data_file:
-            line = data_file.read().rstrip('\n')
-            segment_indexes = self.transform_line(line)
-        with open(out_filename, "wb") as save_file:
-            pickle.dump(segment_indexes, save_file)
+        
+        with open(file_name) as data_file:
+            manager = mp.Manager()
+            transformed_lines = manager.dict()
+            transformed_lines = [self.transform_line(idx, line, transformed_lines)
+                            for idx,line in enumerate(data_file)]
+            # with ThreadPoolExecutor(max_workers=self.threads) as pool:
+
+            #     futures = [pool.submit(self.transform_line, idx, line, transformed_lines)
+            #                 for idx,line in tqdm(enumerate(data_file))]
+            #     print('Waiting for tasks to complete...')
+            #     wait(futures)
+            with open(out_filename, "w") as out_file:
+                for line in transformed_lines:
+                    out_file.write(' '.join(line)+"\n")
+            #self.save_results(out_filename, transformed_lines)
+        
 
         logger.info("-----transform with %d threads took %s seconds -----" % (self.threads, time.time() - start_time))
-        #print("-----transform with %d threads took %s seconds -----" % (self.threads, time.time() - start_time))
-        logger.debug(f"fragmented file saved to {out_filename}")
-        return segment_indexes
+        print("-----transform with %d threads took %s seconds -----" % (self.threads, time.time() - start_time))
+        print(f"fragmented file saved to {out_filename}")
+        return out_filename
 
-    def transform_line(self, line):
-        sentence =  line.strip().split(' ') 
+    def transform_line(self, idx, line, transformed_lines):
+        
+        sentence =  line.strip().split() 
         if sentence == []:
             return          
         split_pattern = self.vote(sentence)
-        return self.split(split_pattern)
+        fragmented_sentence = self.split(sentence, split_pattern)
+        transformed_lines[idx] = fragmented_sentence
+        return fragmented_sentence
+
+    def vote_parallel(self, sentence):
+        num_of_sliding_windows_in_a_sentence = get_num_of_sliding_windows_in_a_sentence(sentence,self.window_size)
+        if num_of_sliding_windows_in_a_sentence<self.threads:
+            threads_count = num_of_sliding_windows_in_a_sentence
+        else:
+            threads_count = self.threads 
+
+        manager = mp.Manager()
+        return_dict = manager.dict()
+        split_pattern = np.zeros((len(sentence)),dtype='float64')
+        self.vote_thread(0, sentence, return_dict)
+        #subsets = _split(sentence, self.threads, self.tree_depth)
+        #with ThreadPoolExecutor(max_workers=self.threads) as pool:
+        #            for sub in tqdm(subsets):
+        #                pool.submit(self.vote_thread, sub[0], sub[1], return_dict)
+        #jobs = []
+        
+        # for sub in subsets:
+        #     p = multiprocessing.Process(target=self.thread, args=(sub[0], sub[1], return_dict))
+        #     jobs.append(p)
+        #     p.start()
+        # for proc in jobs:
+        #     proc.join()
+
+        for key,value in return_dict.items():
+            end = value.shape[0]
+            split_pattern[key:key+end] += value
+        return split_pattern
 
     def vote(self, sequence):
         """
@@ -225,18 +309,26 @@ class VotingExperts(Ngram):
             slice_array[frequency_slice_spot] += 1
         return slice_array
 
-    def split(self, slicing_pattern):
-        indexes = []
+    def split(self, sequence, slicing_pattern):
+        #TODO zmienić, żeby zwracał indeksy powyżej threshold, 
+        #i na podstawie draina odbudowywał sekwencje podziału
+        sen = []
+        split_sequence = []
         for i in range(len(slicing_pattern)):
+            sen.append(sequence[i])
             if slicing_pattern[i] > self.threshold:
-                indexes.append(i+1)
-        return indexes
+                split_sequence.append(''.join(sen))
+                sen = []
+        if not sen == []:
+            split_sequence.append(''.join(sen))
+        return split_sequence
 
     def vote_thread(self, sub_id, sub, return_dict):
         pattern = self.vote(sub)
         return_dict[sub_id] = pattern
 
     def create_split_file(self, file_name):
+        # print("create split file")
         split_file_name = Path(self.out_directory)/f"{Path(file_name).stem}_{self.max_line_size}_splitted.txt"
         if not Path(split_file_name).is_file():
             with open(file_name, "r") as data_file:
@@ -257,10 +349,11 @@ class VotingExperts(Ngram):
           
     def save_results(self, out_filename, transformed_lines):
         with open(out_filename, "wb") as out_file:
-            for key in sorted(transformed_lines.keys()):
-                pickle.dump(transformed_lines[key], out_file)
+            print(f"saving transformed {len(transformed_lines.keys())} lines")
+            
+            pickle.dump(list(sorted(transformed_lines.values(), key=lambda item: item[0][0])), out_file)
 
-    def fit_transform(self, file):
+    def fit_transform(self, dataset_file):
         """
         dataset_file: string. File contains list of *.drain files that are going to be scanned
 
@@ -269,10 +362,11 @@ class VotingExperts(Ngram):
         logger.debug(f"fit transform Entropy window {self.window_size} threshold {self.threshold}")
         if self.window_size < 1 or self.tree_depth < 2 or self.window_size >= self.tree_depth:
             return []
+        self.tree_name = Path(dataset_file).stem
  
-        self.fit(file)
+        self.fit(dataset_file)
 
-        return self.transform(file)
+        return self.transform(dataset_file)
 
 if __name__ == '__main__':
     import sys
@@ -287,7 +381,7 @@ if __name__ == '__main__':
     from argparse import ArgumentParser
 
     parser = ArgumentParser()
-    parser.add_argument("file", type=str)
+    parser.add_argument("dataset", type=str)
     parser.add_argument("window", type=int)
     parser.add_argument("threshold", type=int)
     parser.add_argument("out_dir", type=str)
@@ -295,5 +389,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     ve = VotingExperts(args.window, args.threshold, out_directory=args.out_dir)
-
-    ve.fit_transform(args.file)
+    with open(args.dataset, "r") as dataset:
+            files_list = dataset.read().splitlines()
+    ve.fit(files_list)
