@@ -23,8 +23,11 @@ def flatten(multi_list):
     """Flatten a list of lists into a single list"""
     return list(itertools.chain.from_iterable(multi_list))
 
+def word_tokenize(line, char_split):
+    return [word.split(char_split) for word in line.rstrip().split(' ')]
+
 def character_tokenize(
-    in_file
+    in_file, char_split = None
 ):
     """
     Character tokenize the input file, lowercasing and exlcuding whitespace
@@ -34,7 +37,10 @@ def character_tokenize(
     # For drains only this:
     with open(in_file, "r") as in_file:
         lines = in_file.read().splitlines()
-    text =[line.split() for line in lines]
+    if char_split is None:
+        text =[line.rstrip().split() for line in lines]
+    else:
+        text =[word_tokenize(line, char_split) for line in lines]
     return text
 
 def get_boundary_vector(sequence: List[List[str]]) -> List[int]:
@@ -158,21 +164,23 @@ def golden_std_f1_score(segmentation, golden_std_file_path):
                         recall = num of true positives / num of all golden segments.
                         F1= 2*precision*recall/(precision + recall)
     """
+    dev_tokens = character_tokenize(segmentation, char_split='_')
+    dev_boundaries = [get_boundary_vector(ex) for ex in dev_tokens]
+    all_dev_boundaries = np.array(flatten(dev_boundaries))
+
     with open(golden_std_file_path, "rb") as golden_std_file:
         golden_segmentation = pickle.load(golden_std_file)
-     
-    # [(1,5), (6,8)] split is end of previoius word and beg of nex word
-    # in this way segmentation [(1,4),(5,6)] is equally wrong with [(1,2),(3,4)]
-    if len(segmentation) == 0:
-        return 0
-    received_splits = segmentation#get_splits_from_segments(segmentation)
-    golden_segments = sorted(golden_segmentation.keys(), key=lambda item: item[0])
-    golden_splits = get_splits_from_segments(golden_segments)
-    #print("golden std splits ", golden_splits, "golden splits")
-    return f1_score(received_splits, golden_splits)
+    gold_boundaries = [get_boundary_vector(ex) for ex in golden_segmentation]
+    all_gold_boundaries = np.array(flatten(gold_boundaries))
+    flat_dev = flatten(flatten(dev_tokens))
+    flat_golden = flatten(flatten(golden_segmentation))
+    assert(len(flat_dev) == len(flat_golden))
+    prec,rec,f1score,_ = fscore(all_gold_boundaries, all_dev_boundaries, average='binary')
+    conf_mat = confusion_matrix(all_gold_boundaries, all_dev_boundaries)
+    return prec, rec, f1score, conf_mat
 
 def voting_experts_f1_score(drained_file, golden_std_file_path, depth, threshold, out_directory):
-    ve = VotingExperts(depth, threshold, out_directory=out_directory)
+    ve = VotingExperts(window_size=depth, threshold=threshold, out_directory=out_directory, binary=True)
     
     segmentation = ve.fit_transform(drained_file)
 
@@ -222,6 +230,8 @@ if __name__ == "__main__":
     parser.add_argument("-voting_experts", action='store_true')
     parser.add_argument("-word_freq", type=int)
     parser.add_argument("-out_dir", type=str)
+    parser.add_argument("-golden_test", action='store_true')
+    parser.add_argument("-binary", action='store_true')
     args = parser.parse_args()
     if args.voting_experts:
         prec, recall, f1score, conf_mat = voting_experts_text_f1_score(args.unsegmented,
@@ -229,6 +239,11 @@ if __name__ == "__main__":
                                                     args.window,
                                                     args.threshold,
                                                     args.out_dir)
+    elif args.golden_test:
+        if args.binary:
+            prec, recall, f1score, conf_mat = golden_std_f1_score(args.unsegmented, args.golden)
+        else:
+            prec, recall, f1score, conf_mat = golden_text_f1_score(args.unsegmented, args.golden)
     else:
         prec, recall, f1score, conf_mat = top_words_text_f1_score(args.unsegmented, 
                                              args.golden, 

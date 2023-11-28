@@ -42,6 +42,7 @@ def bayes_for_voting_experts(args):
         try:
             result = 'Partial Result: {}; f(x)={}.'.format(next_point, target)
             logger.info(result) 
+            print(result)
             out_file.write(result+"\n")
             optimizer.register(params=next_point, target=target)
         except:
@@ -150,6 +151,8 @@ if __name__ == '__main__':
         help='voting experts segmentation')
     parser.add_argument('-text', action='store_true',
         help='text file segmentation')
+    parser.add_argument('-binary', action='store_true',
+        help='binary file segmentation')
     parser.add_argument('-out_dir', type=str,
         help='out directory')
 

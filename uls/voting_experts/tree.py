@@ -56,7 +56,7 @@ def calculate_entropy(root, data, depth):
     return log_entropy/len(data)
 
 def update_tree(root, sentences, depth):
-    for data in tqdm(sentences, desc="adding sentences to tree"):
+    for data in sentences:
         for i in range(len(data)):
             last = root.add_node(data[i])
             for j in range(depth - 2):
@@ -121,7 +121,6 @@ def standardize(root, stats, threads=55):
     for node in root.nodes.values():
         queue.append(node)
  
-
     # Dividing tree into {threads} parts to process all of them independently
     index = 0
     divided_queues = []

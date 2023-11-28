@@ -36,7 +36,7 @@ def _split(sentence, threads, sliding_window_size):
 
 class VotingExperts(Ngram):
     def __init__(self, window_size, threshold, out_directory=None, ngram_tree=None, silent=True, threads=55,
-                  max_line_size=140000):
+                  max_line_size=140000, binary=False):
         """
         tree_depth: int. Depth of n_gram tree. Depth of 4 will create a tree of 3_grams
         window_size: int. Size of window considered by voting expert in each iteration. Should be less than (tree_depth - 1)
@@ -55,6 +55,11 @@ class VotingExperts(Ngram):
         self.longest_word = 0
         self.max_line_size = max_line_size
         self.tree_name = "ngram_tree"
+        self.binary = binary
+        if binary:
+            self.char_sep = '_'
+        else:
+            self.char_sep = ''
 
     def get_ngram_tree(self):
         return self.ngram_tree
@@ -77,15 +82,13 @@ class VotingExperts(Ngram):
         srilm_path = os.getenv('SRILM_PATH')
         out_file = Path(self.out_directory)/f"{Path(file_name).stem}_{self.tree_depth}gram"
 
-        self.split_file_name = self.create_split_file(file_name)
-
         if Path(out_file).is_file():
             return out_file
 
-        logger.debug(f"{srilm_path}/ngram-count -order {self.tree_depth} -text {self.split_file_name} -no-sos -no-eos -write {out_file} ")
+        logger.debug(f"{srilm_path}/ngram-count -order {self.tree_depth} -text {file_name} -no-sos -no-eos -write {out_file} ")
         start_time = time.time()
-        subprocess.call(f"{srilm_path}/ngram-count -order {self.tree_depth} -text {self.split_file_name} -no-sos -no-eos -write {out_file}", shell=True)
-        logger.debug(f"calculating ngram of order {self.tree_depth} for file {self.split_file_name} took ----- {(time.time() - start_time)} seconds -----")
+        subprocess.call(f"{srilm_path}/ngram-count -order {self.tree_depth} -text {file_name} -no-sos -no-eos -write {out_file}", shell=True)
+        logger.debug(f"calculating ngram of order {self.tree_depth} for file {file_name} took ----- {(time.time() - start_time)} seconds -----")
                     
         return out_file
     
@@ -136,7 +139,7 @@ class VotingExperts(Ngram):
             return False
         start_time = time.time()
         if self.out_directory is None:
-            self.out_directory = Path(file_list[0]).parent
+            self.out_directory = Path(file_name).parent
             Path(f"{self.out_directory}").mkdir(parents=True, exist_ok=True)
         retrieved_tree = self.retrieve_tree(self.out_directory) 
         if retrieved_tree is not None:
@@ -144,10 +147,8 @@ class VotingExperts(Ngram):
         if self.window_size < 1 or self.tree_depth < 2:
             return False
         srilm_path = os.getenv('SRILM_PATH')
-        if Path(f"{srilm_path}/ngram-count").is_file():
-            self.build_ngram_tree_with_srilm(file_name)
-        else:
-            self.build_ngram_tree(file_name)
+
+        self.build_ngram_tree(file_name)
         
         self.standardize_tree()
         out_file = Path(self.out_directory)/f"{self.tree_name}_{self.tree_depth}gram.tree"
@@ -155,7 +156,7 @@ class VotingExperts(Ngram):
             pickle.dump(self.ngram_tree, out)
         logger.debug(f"ngram tree saved to {out_file}")
         logger.info("-----fit took %s seconds -----" % (time.time() - start_time))
-        print("-----fit took %s seconds -----" % (time.time() - start_time))
+        #print("-----fit took %s seconds -----" % (time.time() - start_time))
         
         return True
 
@@ -168,6 +169,7 @@ class VotingExperts(Ngram):
         Path(lm).unlink()
 
     def build_ngram_tree(self, file_name):
+
         with open(file_name, "r") as data_file:
             lines = 0
             sentences = []
@@ -180,10 +182,10 @@ class VotingExperts(Ngram):
             if lines == 0:
                 logger.error("Draining empty. See above errors.")
                 return
-            if not self.ngram_tree:
-                self.ngram_tree = build_tree(sentences, self.tree_depth)
-            else:
-                update_tree(self.ngram_tree, sentences, self.tree_depth)
+        if not self.ngram_tree:
+            self.ngram_tree = build_tree(sentences, self.tree_depth)
+        else:
+            update_tree(self.ngram_tree, sentences, self.tree_depth)
 
     def standardize_tree(self):
        
@@ -216,26 +218,28 @@ class VotingExperts(Ngram):
 
         start_time = time.time()
         
-        with open(file_name) as data_file:
-            manager = mp.Manager()
-            transformed_lines = manager.dict()
-            transformed_lines = [self.transform_line(idx, line, transformed_lines)
-                            for idx,line in enumerate(data_file)]
-            # with ThreadPoolExecutor(max_workers=self.threads) as pool:
 
-            #     futures = [pool.submit(self.transform_line, idx, line, transformed_lines)
-            #                 for idx,line in tqdm(enumerate(data_file))]
-            #     print('Waiting for tasks to complete...')
-            #     wait(futures)
-            with open(out_filename, "w") as out_file:
-                for line in transformed_lines:
-                    out_file.write(' '.join(line)+"\n")
+        with open(file_name, "r") as data_file:
+            lines = data_file.read().splitlines()
+        manager = mp.Manager()
+        transformed_lines = manager.dict()
+        transformed_lines = [self.transform_line(idx, line, transformed_lines)
+                        for idx,line in enumerate(lines)]
+        # with ThreadPoolExecutor(max_workers=self.threads) as pool:
+
+        #     futures = [pool.submit(self.transform_line, idx, line, transformed_lines)
+        #                 for idx,line in tqdm(enumerate(data_file))]
+        #     print('Waiting for tasks to complete...')
+        #     wait(futures)
+        with open(out_filename, "w") as out_file:
+            for line in transformed_lines:
+                out_file.write(' '.join(line)+"\n")
             #self.save_results(out_filename, transformed_lines)
         
 
         logger.info("-----transform with %d threads took %s seconds -----" % (self.threads, time.time() - start_time))
-        print("-----transform with %d threads took %s seconds -----" % (self.threads, time.time() - start_time))
-        print(f"fragmented file saved to {out_filename}")
+        #print("-----transform with %d threads took %s seconds -----" % (self.threads, time.time() - start_time))
+        #print(f"fragmented file saved to {out_filename}")
         return out_filename
 
     def transform_line(self, idx, line, transformed_lines):
@@ -317,10 +321,10 @@ class VotingExperts(Ngram):
         for i in range(len(slicing_pattern)):
             sen.append(sequence[i])
             if slicing_pattern[i] > self.threshold:
-                split_sequence.append(''.join(sen))
+                split_sequence.append(self.char_sep.join(sen))
                 sen = []
         if not sen == []:
-            split_sequence.append(''.join(sen))
+            split_sequence.append(self.char_sep.join(sen))
         return split_sequence
 
     def vote_thread(self, sub_id, sub, return_dict):
