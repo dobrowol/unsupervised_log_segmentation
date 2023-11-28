@@ -68,7 +68,15 @@ class VotingExperts(Ngram):
         return self.longest_word
 
     def set_tree_depth(self, value):
-        self.tree_depth = value
+        self.tree_depth = value + 1
+        self.window_size = value
+    
+    def set_threshold(self, threshold):
+        self.threshold = threshold
+
+    def set_depth(self, depth):
+        self.tree_depth = depth +1
+        self.window_size = depth
 
     def find_frequencies(self, node, depth, nodes):
         if depth == 0:
@@ -92,19 +100,27 @@ class VotingExperts(Ngram):
                     
         return out_file
     
-    def retrieve_tree(self, a_dir):
+    def retrieve_tree(self):
         if self.ngram_tree is not None:
             return self.ngram_tree
         start_time = time.time()
-        trees = list(Path(a_dir).glob(f"*_{self.tree_depth}gram.tree"))
+        trees = list(Path(self.out_directory).glob(f"*_*gram.tree"))
         if len(trees) == 0:
             return None
-        tree_file = trees[0]
-        logger.debug(f"using old tree {tree_file}")
-        with open(tree_file, "rb") as inp:
-            self.ngram_tree = pickle.load(inp)
-            logger.info("loading old ngram tree took ----- %s seconds -----" % (time.time() - start_time))
-        return tree_file
+        import re
+        for tree in trees:
+            numbers = re.findall(r'_(\d+)gram.tree', str(tree))
+            if len(numbers) == 0:
+                continue
+            if int(numbers[0]) >= self.tree_depth:
+                logger.debug(f"using old tree {tree}")
+                with open(tree, "rb") as inp:
+                    self.ngram_tree = pickle.load(inp)
+                    logger.info("loading old ngram tree took ----- %s seconds -----" % (time.time() - start_time))
+                    print("loading old ngram tree took ----- %s seconds -----" % (time.time() - start_time))
+                return tree 
+        
+        return None
 
     # def fit(self, data):
     #     if self.max_line_size < self.tree_depth:
@@ -141,24 +157,27 @@ class VotingExperts(Ngram):
         if self.out_directory is None:
             self.out_directory = Path(file_name).parent
             Path(f"{self.out_directory}").mkdir(parents=True, exist_ok=True)
-        retrieved_tree = self.retrieve_tree(self.out_directory) 
+        retrieved_tree = self.retrieve_tree() 
         if retrieved_tree is not None:
             return True
         if self.window_size < 1 or self.tree_depth < 2:
             return False
-        srilm_path = os.getenv('SRILM_PATH')
 
         self.build_ngram_tree(file_name)
         
         self.standardize_tree()
-        out_file = Path(self.out_directory)/f"{self.tree_name}_{self.tree_depth}gram.tree"
-        with open(out_file, "wb") as out:
-            pickle.dump(self.ngram_tree, out)
-        logger.debug(f"ngram tree saved to {out_file}")
+        if retrieved_tree is None:
+            out_file = Path(self.out_directory)/f"{self.tree_name}_{self.tree_depth}gram.tree"
+            if not out_file.is_file():
+                with open(out_file, "wb") as out:
+                    pickle.dump(self.ngram_tree, out)
+                logger.debug(f"ngram tree saved to {out_file}")
         logger.info("-----fit took %s seconds -----" % (time.time() - start_time))
-        #print("-----fit took %s seconds -----" % (time.time() - start_time))
+        print("-----fit took %s seconds -----" % (time.time() - start_time))
         
         return True
+    
+
 
     def build_ngram_tree_with_srilm(self, file_name):
         lm = self.count_ngrams(file_name)
@@ -357,7 +376,7 @@ class VotingExperts(Ngram):
             
             pickle.dump(list(sorted(transformed_lines.values(), key=lambda item: item[0][0])), out_file)
 
-    def fit_transform(self, dataset_file):
+    def fit_transform(self, training_file, dev_file):
         """
         dataset_file: string. File contains list of *.drain files that are going to be scanned
 
@@ -366,11 +385,11 @@ class VotingExperts(Ngram):
         logger.debug(f"fit transform Entropy window {self.window_size} threshold {self.threshold}")
         if self.window_size < 1 or self.tree_depth < 2 or self.window_size >= self.tree_depth:
             return []
-        self.tree_name = Path(dataset_file).stem
- 
-        self.fit(dataset_file)
-
-        return self.transform(dataset_file)
+        self.tree_name = Path(training_file).stem
+        print("fiting VE...")
+        self.fit(training_file)
+        print("transforming with VE...")
+        return self.transform(dev_file)
 
 if __name__ == '__main__':
     import sys

@@ -1,6 +1,7 @@
 from uls.golden_std_segmentation import voting_experts_f1_score, voting_experts_text_f1_score
 from uls.golden_std_segmentation import top_words_f1_score, top_words_text_f1_score
 from uls.golden_std_segmentation import fixed_window_f1_score, fixed_window_text_f1_score
+from uls.voting_experts.voting_experts import VotingExperts
 from bayes_opt import BayesianOptimization, UtilityFunction
 import argparse
 import logging
@@ -21,6 +22,8 @@ def bayes_for_voting_experts(args):
 
     utility = UtilityFunction(kind='ucb', kappa=1.96, xi=0.01)
     ctr = 0
+    ve = VotingExperts(40, 20, out_directory=args.out_dir)
+    ve.retrieve_tree()
     for _ in range(int(args.iterations)):
         next_point = optimizer.suggest(utility)
         ctr += 1
@@ -36,9 +39,9 @@ def bayes_for_voting_experts(args):
                 print("you need to specify golden standard file if you have chosen")
                 return None
         if not args.text:
-            target = voting_experts_f1_score(args.log, args.std, window, threshold, args.out_dir)
+            target = voting_experts_f1_score(args.log, args.std, window, threshold, args.out_dir, voting_experts=ve)
         else:
-            target = voting_experts_text_f1_score(args.log, args.std, window, threshold, args.out_dir)
+            target = voting_experts_text_f1_score(args.log, args.std, window, threshold, args.out_dir, voting_experts=ve)
         try:
             result = 'Partial Result: {}; f(x)={}.'.format(next_point, target)
             logger.info(result) 

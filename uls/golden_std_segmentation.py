@@ -11,7 +11,6 @@ from uls.topwords.topwords import TopWORDS
 from uls.fixed_window import FixedWindow
 from typing import List
 import itertools
-import segment_evaluator
 
 def is_in(item, list_of_tuples):
     for tup in list_of_tuples:
@@ -150,7 +149,7 @@ def golden_text_f1_score(segmentation, original_text_file):
     all_dev_boundaries = np.array(flatten(dev_boundaries))
     prec,rec,f1score,_ = fscore(all_gold_boundaries, all_dev_boundaries, average='binary')
     conf_mat = confusion_matrix(all_gold_boundaries, all_dev_boundaries)
-    return prec,rec,f1score, conf_mat
+    return f1score
 
 def golden_std_f1_score(segmentation, golden_std_file_path):
     """
@@ -186,9 +185,14 @@ def voting_experts_f1_score(drained_file, golden_std_file_path, depth, threshold
 
     return golden_std_f1_score(segmentation, golden_std_file_path)
 
-def voting_experts_text_f1_score(drained_file, golden_std_file_path, depth, threshold, out_directory):
-    ve = VotingExperts(depth, threshold, out_directory=out_directory)
-    
+def voting_experts_text_f1_score(drained_file, golden_std_file_path, depth, threshold, out_directory, voting_experts=None):
+    if voting_experts is None:
+        ve = VotingExperts(depth, threshold, out_directory=out_directory)
+    else:
+        ve = voting_experts
+        ve.set_depth(depth)
+        ve.set_threshold(threshold)
+
     segmentation = ve.fit_transform(drained_file)
 
     return golden_text_f1_score(segmentation, golden_std_file_path)
