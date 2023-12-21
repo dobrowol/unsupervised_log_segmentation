@@ -36,7 +36,7 @@ def _split(sentence, threads, sliding_window_size):
 
 class VotingExperts(Ngram):
     def __init__(self, window_size, threshold, out_directory=None, ngram_tree=None, silent=True, threads=55,
-                  max_line_size=140000, binary=False):
+                  max_line_size=140000, drains=False):
         """
         tree_depth: int. Depth of n_gram tree. Depth of 4 will create a tree of 3_grams
         window_size: int. Size of window considered by voting expert in each iteration. Should be less than (tree_depth - 1)
@@ -55,8 +55,8 @@ class VotingExperts(Ngram):
         self.longest_word = 0
         self.max_line_size = max_line_size
         self.tree_name = "ngram_tree"
-        self.binary = binary
-        if binary:
+        self.drains = drains
+        if drains:
             self.char_sep = '_'
         else:
             self.char_sep = ''
@@ -164,14 +164,14 @@ class VotingExperts(Ngram):
             return False
 
         self.build_ngram_tree(file_name)
-        
+        print("standardizing tree")
         self.standardize_tree()
-        if retrieved_tree is None:
-            out_file = Path(self.out_directory)/f"{self.tree_name}_{self.tree_depth}gram.tree"
-            if not out_file.is_file():
-                with open(out_file, "wb") as out:
-                    pickle.dump(self.ngram_tree, out)
-                logger.debug(f"ngram tree saved to {out_file}")
+        # if retrieved_tree is None:
+        #     out_file = Path(self.out_directory)/f"{self.tree_name}_{self.tree_depth}gram.tree"
+        #     if not out_file.is_file():
+        #         with open(out_file, "wb") as out:
+        #             pickle.dump(self.ngram_tree, out)
+        #         logger.debug(f"ngram tree saved to {out_file}")
         logger.info("-----fit took %s seconds -----" % (time.time() - start_time))
         print("-----fit took %s seconds -----" % (time.time() - start_time))
         
@@ -188,7 +188,7 @@ class VotingExperts(Ngram):
         Path(lm).unlink()
 
     def build_ngram_tree(self, file_name):
-
+        print("building ngram tree of size ",self.tree_depth)
         with open(file_name, "r") as data_file:
             lines = 0
             sentences = []
@@ -205,6 +205,7 @@ class VotingExperts(Ngram):
             self.ngram_tree = build_tree(sentences, self.tree_depth)
         else:
             update_tree(self.ngram_tree, sentences, self.tree_depth)
+        print(f"created tree from {len(sentences)} sentences")
 
     def standardize_tree(self):
        
@@ -242,8 +243,11 @@ class VotingExperts(Ngram):
             lines = data_file.read().splitlines()
         manager = mp.Manager()
         transformed_lines = manager.dict()
-        transformed_lines = [self.transform_line(idx, line, transformed_lines)
+        try:
+            transformed_lines = [self.transform_line(idx, line, transformed_lines)
                         for idx,line in enumerate(lines)]
+        except Exception as err:
+            return ""
         # with ThreadPoolExecutor(max_workers=self.threads) as pool:
 
         #     futures = [pool.submit(self.transform_line, idx, line, transformed_lines)
@@ -265,8 +269,11 @@ class VotingExperts(Ngram):
         
         sentence =  line.strip().split() 
         if sentence == []:
-            return          
-        split_pattern = self.vote(sentence)
+            return      
+        try:    
+            split_pattern = self.vote(sentence)
+        except Exception as err:
+            raise err
         fragmented_sentence = self.split(sentence, split_pattern)
         transformed_lines[idx] = fragmented_sentence
         return fragmented_sentence
@@ -320,7 +327,11 @@ class VotingExperts(Ngram):
             prev_node = self.ngram_tree
             for j in range(0,len(subsequence)):
                 node = prev_node.nodes[subsequence[j]]
-                node_rest = find_node(subsequence[j+1:], self.ngram_tree)
+                try:
+                    node_rest = find_node(subsequence[j+1:], self.ngram_tree)
+                except Exception as err:
+                    print(f"could not find {subsequence[j+1:]} in ngram tree of depth {self.tree_depth}")
+                    raise err
                 prev_node = node
                 entropies.append(node.entropy)
                 frequencies.append(node.frequency + node_rest.frequency)

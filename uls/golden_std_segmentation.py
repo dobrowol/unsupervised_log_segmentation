@@ -173,16 +173,24 @@ def golden_std_f1_score(segmentation, golden_std_file_path):
     all_gold_boundaries = np.array(flatten(gold_boundaries))
     flat_dev = flatten(flatten(dev_tokens))
     flat_golden = flatten(flatten(golden_segmentation))
+    print("len(flat_dev) ", len(flat_dev))
+    print("len(flat_golden) ", len(flat_golden))
     assert(len(flat_dev) == len(flat_golden))
     prec,rec,f1score,_ = fscore(all_gold_boundaries, all_dev_boundaries, average='binary')
     conf_mat = confusion_matrix(all_gold_boundaries, all_dev_boundaries)
-    return prec, rec, f1score, conf_mat
+    return prec,rec,f1score,conf_mat
 
-def voting_experts_f1_score(drained_file, golden_std_file_path, depth, threshold, out_directory):
-    ve = VotingExperts(window_size=depth, threshold=threshold, out_directory=out_directory, binary=True)
+def voting_experts_f1_score(training_file, testing_file, golden_std_file_path, depth, threshold, out_directory, voting_experts=None):
+    if voting_experts is None:
+        ve = VotingExperts(depth, threshold, out_directory=out_directory)
+    else:
+        ve = voting_experts
+        ve.set_depth(depth)
+        ve.set_threshold(threshold)
     
-    segmentation = ve.fit_transform(drained_file)
-
+    segmentation = ve.fit_transform(training_file, testing_file)
+    if segmentation == "":
+        return 0.0
     return golden_std_f1_score(segmentation, golden_std_file_path)
 
 def voting_experts_text_f1_score(drained_file, golden_std_file_path, depth, threshold, out_directory, voting_experts=None):
@@ -235,7 +243,7 @@ if __name__ == "__main__":
     parser.add_argument("-word_freq", type=int)
     parser.add_argument("-out_dir", type=str)
     parser.add_argument("-golden_test", action='store_true')
-    parser.add_argument("-binary", action='store_true')
+    parser.add_argument("-drains", action='store_true')
     args = parser.parse_args()
     if args.voting_experts:
         prec, recall, f1score, conf_mat = voting_experts_text_f1_score(args.unsegmented,
@@ -244,7 +252,7 @@ if __name__ == "__main__":
                                                     args.threshold,
                                                     args.out_dir)
     elif args.golden_test:
-        if args.binary:
+        if args.drains:
             prec, recall, f1score, conf_mat = golden_std_f1_score(args.unsegmented, args.golden)
         else:
             prec, recall, f1score, conf_mat = golden_text_f1_score(args.unsegmented, args.golden)

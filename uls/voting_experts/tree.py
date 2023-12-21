@@ -146,7 +146,10 @@ def inner_standardize(queue, stats):
 def find_node(seq, ngram_tree):
     last = ngram_tree
     for letter in seq:
-        last = last.nodes[letter]
+        try:
+            last = last.nodes[letter]
+        except Exception as err:
+            raise err
     return last
 
 def find_child(child, ngram_tree):
