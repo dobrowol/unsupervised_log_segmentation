@@ -109,6 +109,7 @@ class VotingExperts(Ngram):
             return None
         import re
         for tree in trees:
+            print("existing tree ", tree)
             numbers = re.findall(r'_(\d+)gram.tree', str(tree))
             if len(numbers) == 0:
                 continue
@@ -230,7 +231,7 @@ class VotingExperts(Ngram):
             
 
     def transform_file(self, file_name):
-        out_filename = Path(self.out_directory)/f"{Path(file_name).stem}_{self.window_size}_{self.threshold}_segmented.txt"
+        out_filename = Path(self.out_directory)/f"{Path(file_name).stem}_{self.window_size}_{self.threshold}_segmented.tseg"
         # if Path(out_filename).is_file():
         #     with open(out_filename, "r") as segm_file:
         #         segments = pickle.load(segm_file)
@@ -254,10 +255,14 @@ class VotingExperts(Ngram):
         #                 for idx,line in tqdm(enumerate(data_file))]
         #     print('Waiting for tasks to complete...')
         #     wait(futures)
-        with open(out_filename, "w") as out_file:
-            for line in transformed_lines:
-                out_file.write(' '.join(line)+"\n")
-            #self.save_results(out_filename, transformed_lines)
+        
+        # with open(out_filename, "w") as out_file:
+        #     for line in transformed_lines:
+        #         out_file.write(' '.join(line)+"\n")
+        #self.save_results(out_filename, transformed_lines)
+        with open(out_filename, "wb") as out_file:
+            import pickle
+            pickle.dump(transformed_lines, out_file)
         
 
         logger.info("-----transform with %d threads took %s seconds -----" % (self.threads, time.time() - start_time))
@@ -351,10 +356,12 @@ class VotingExperts(Ngram):
         for i in range(len(slicing_pattern)):
             sen.append(sequence[i])
             if slicing_pattern[i] > self.threshold:
-                split_sequence.append(self.char_sep.join(sen))
+                #split_sequence.append(self.char_sep.join(sen))
+                split_sequence.append(sen)
                 sen = []
         if not sen == []:
-            split_sequence.append(self.char_sep.join(sen))
+            #split_sequence.append(self.char_sep.join(sen))
+            split_sequence.append(sen)
         return split_sequence
 
     def vote_thread(self, sub_id, sub, return_dict):
@@ -415,14 +422,24 @@ if __name__ == '__main__':
     from argparse import ArgumentParser
 
     parser = ArgumentParser()
-    parser.add_argument("dataset", type=str)
-    parser.add_argument("window", type=int)
-    parser.add_argument("threshold", type=int)
-    parser.add_argument("out_dir", type=str)
+    parser.add_argument("train_file", type=str)
+    parser.add_argument("--dev-file", type=str)
+    parser.add_argument("--window", type=int)
+    parser.add_argument("--threshold", type=int)
+    parser.add_argument("--out_dir", type=str)
+    parser.add_argument("--drains", action='store_true')
 
     args = parser.parse_args()
-
-    ve = VotingExperts(args.window, args.threshold, out_directory=args.out_dir)
-    with open(args.dataset, "r") as dataset:
-            files_list = dataset.read().splitlines()
-    ve.fit(files_list)
+    drains=False
+    if args.drains:
+        drains=True
+    ve = VotingExperts(args.window, args.threshold, out_directory=args.out_dir, drains=drains)
+    if args.dev_file:
+        dev_file = args.dev_file
+    else:
+        dev_file = args.train_file
+    segments = ve.fit_transform(args.train_file, dev_file)
+    print("segmentation in ", segments)
+    # with open(args.out_dir+"/result_segmentation.txt", "w") as out_file:
+    #     for segment in segments:
+    #         out_file.write(' '.join(segment)+"\n")

@@ -23,7 +23,7 @@ def bayes_for_voting_experts(args):
     utility = UtilityFunction(kind='ucb', kappa=1.96, xi=0.01)
     ctr = 0
 
-    ve = VotingExperts(40, 20, out_directory=args.out_dir, drains=args.drains)
+    ve = VotingExperts(40, 10, out_directory=args.out_dir, drains=args.drains)
     ve.retrieve_tree()
     ve.fit(args.training_file)
     for _ in range(int(args.iterations)):
@@ -72,7 +72,7 @@ def bayes_for_fixed_window(args):
             ctr, args.iterations, next_point['window']
             ))
 
-        if args.log:
+        if args.training_file:
             if not args.std:
                 print("you need to specify golden standard file if you have chosen")
                 return None
@@ -80,9 +80,9 @@ def bayes_for_fixed_window(args):
         best_alignment = 0
         for alignment in range(window):
             if not args.text:
-                target = fixed_window_f1_score(args.log, args.std, alignment, window)
+                target = fixed_window_f1_score(args.training_file, args.std, alignment, window)
             else:
-                target = fixed_window_text_f1_score(args.log, args.std, alignment, window)
+                target = fixed_window_text_f1_score(args.training_file, args.std, alignment, window)
             if target > max_target:
                 max_target = target
                 best_alignment = alignment
@@ -90,6 +90,7 @@ def bayes_for_fixed_window(args):
         try:
             result = 'Partial Result: {};alignment: {}, f(x)={}.'.format(next_point, best_alignment, target)
             logger.info(result) 
+            print(result)
             out_file.write(result+"\n")
             optimizer.register(params=next_point, target=max_target)
         except:
