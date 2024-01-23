@@ -151,7 +151,7 @@ class TopWORDS:
                     #index after which we should segment
                     segments.append(start_idx + len(item))
                     start_idx += len(item)
-                    fo.write(f"{item} ")
+                    fo.write(f"{''.join(item)} ")
         fo.close()
         return segments
                 
@@ -176,7 +176,11 @@ class TopWORDS:
 
     def fit_transform(self, runtime_file):
         ###initialization
-        
+        from pathlib import Path
+        out_file = Path(self.out_dir)/f"segmentation_wl_{self.word_length}_wf_{self.word_frequency}.txt"
+        if out_file.is_file():
+            print(out_file)
+            return out_file
         # preprocess the input corpus
         with open(runtime_file, "r") as texts_file:
             #texts = [['c', 'h', 'a', 'p', 't', 'e', 'r', 'i', 'd', 'o']]
@@ -207,8 +211,7 @@ class TopWORDS:
             # prepare for the next iteration
             lastLikelihood = avglikelihood
             iteration += 1
-        from pathlib import Path
-        out_file = Path(self.out_dir)/f"segmentation_wl_{self.word_length}_wf_{self.word_frequency}.txt"
+
         return self.PESegment(texts,dictionary, out_file)
         
 if __name__ == "__main__":

@@ -1,4 +1,6 @@
+from tqdm import tqdm
 import numpy as np
+import multiprocessing as mp
 from concurrent.futures import ThreadPoolExecutor, wait
 
 
@@ -53,12 +55,13 @@ def calculate_entropy(root, data, depth):
             log_entropy += np.log(last.entropy)
     return log_entropy/len(data)
 
-def update_tree(root, data, depth):
-    for i in range(len(data)):
-        last = root.add_node(data[i])
-        for j in range(depth - 2):
-            if i + j + 1 < len(data):
-                last = last.add_node(data[i + j + 1])
+def update_tree(root, sentences, depth):
+    for data in sentences:
+        for i in range(len(data)):
+            last = root.add_node(data[i])
+            for j in range(depth - 2):
+                if i + j + 1 < len(data):
+                    last = last.add_node(data[i + j + 1])
 
 def add_standard_values(standard, level, type, values):
     if level in standard:
@@ -118,7 +121,6 @@ def standardize(root, stats, threads=55):
     for node in root.nodes.values():
         queue.append(node)
  
-
     # Dividing tree into {threads} parts to process all of them independently
     index = 0
     divided_queues = []
@@ -144,7 +146,10 @@ def inner_standardize(queue, stats):
 def find_node(seq, ngram_tree):
     last = ngram_tree
     for letter in seq:
-        last = last.nodes[letter]
+        try:
+            last = last.nodes[letter]
+        except Exception as err:
+            raise err
     return last
 
 def find_child(child, ngram_tree):
